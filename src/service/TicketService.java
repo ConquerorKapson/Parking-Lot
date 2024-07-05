@@ -4,13 +4,19 @@ import Interfaces.SlotAssignmentStrategy;
 import Interfaces.implementations.slotAssignment.RandomSlotAssignmentStrategyImpl;
 import dto.requestDto.TicketRequestDto;
 import dto.responseDto.TicketResponseDto;
+import enums.SlotStrategyEnums;
 import enums.TicketGenerationsStatus;
+import enums.VehicleType;
+import exception.GateNotFoundException;
+import exception.InvalidVehicleType;
 import exception.ParkingSlotNotFoundException;
+import factory.SlotStrategyFactory;
 import models.*;
 import repository.*;
 
 import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
 
 public class TicketService {
 
@@ -20,17 +26,19 @@ public class TicketService {
     private OperatorRepository operatorRepository;
     private TicketRepository ticketRepository;
     private SlotAssignmentStrategy slotAssignmentStrategy;
+    private SlotStrategyFactory slotStrategyFactory;
     public TicketService(VehicleRepository vehicleRepository,
                   GateRepository gateRepository,
                   ParkingLotRepository parkingLotRepository,
                   OperatorRepository operatorRepository,
-                         TicketRepository ticketRepository) {
+                  TicketRepository ticketRepository,
+                  SlotStrategyFactory slotStrategyFactory) {
         this.vehicleRepository = vehicleRepository;
         this.gateRepository = gateRepository;
         this.parkingLotRepository = parkingLotRepository;
         this.operatorRepository = operatorRepository;
         this.ticketRepository = ticketRepository;
-        this.slotAssignmentStrategy = new RandomSlotAssignmentStrategyImpl(parkingLotRepository);
+        this.slotStrategyFactory = slotStrategyFactory;
     }
 
     public TicketResponseDto issueTicket(TicketRequestDto ticketRequestDto) {
@@ -43,25 +51,33 @@ public class TicketService {
             if(TicketGenerationsStatus.FAILED.name().equals(ticketResponseDto.getTicketGenerationStatus())) {
                 throw new ParkingSlotNotFoundException(ticketResponseDto.getFailureReason());
             }
-        } catch (ParkingSlotNotFoundException parkingSlotNotFoundException) {
-            ticketResponseDto.setFailureReason(parkingSlotNotFoundException.getMessage());
-        }
-        catch (Exception e) {
+        } catch (ParkingSlotNotFoundException | InvalidVehicleType | GateNotFoundException e) {
+            ticketResponseDto.setFailureReason(e.getMessage());
+        } catch (Exception e) {
             ticketResponseDto.setFailureReason("TICKET GENERATION FAILED");
         }
         return ticketResponseDto;
     }
 
-    private void buildTicket(Ticket ticket, TicketRequestDto ticketRequestDto) {
-        Vehicle vehicle = vehicleRepository.getVehicleByVehicleNumber(ticketRequestDto.getNumberPlate());
-        Gate gate = gateRepository.getGateByGateId(ticketRequestDto.getGateId());
-        ParkingSlot parkingSlot = slotAssignmentStrategy.getParkingSlot(ticketRequestDto.getParkingLotId(), vehicle.getVehicleType());
+    private void buildTicket(Ticket ticket, TicketRequestDto ticketRequestDto) throws GateNotFoundException, InvalidVehicleType {
+        VehicleType vehicleType = VehicleType.fromValue(ticketRequestDto.getVehicleType());
+        if(vehicleType == null) {
+            throw new InvalidVehicleType("INVALID VEHICLE ENTERED");
+        }
+
+        Vehicle vehicle = vehicleRepository.getVehicleByVehicleNumber(ticketRequestDto.getNumberPlate(), vehicleType);
+        Optional<Gate> gate = gateRepository.getGateByGateId(ticketRequestDto.getGateId());
+        if(gate.isEmpty()) {
+            throw new GateNotFoundException("VALID GATE ENTRY NOT FOUND");
+        }
+        slotAssignmentStrategy = slotStrategyFactory.getSlotAssignmentStrategy(SlotStrategyEnums.RANDOM.name());
+        ParkingSlot parkingSlot = slotAssignmentStrategy.getParkingSlot(ticketRequestDto.getParkingLotId(), vehicleType);
         Operator operator = operatorRepository.getOperatorByOperatorId(ticketRequestDto.getOperatorId());
         ticket.setTicketNumber(String.valueOf(ticket.getId()));
         ticket.setEntryTime(Date.from(Instant.now()));
         ticket.setVehicle(vehicle);
         ticket.setParkingSlot(parkingSlot);
-        ticket.setGate(gate);
+        ticket.setGate(gate.get());
         ticket.setOperator(operator);
     }
 
