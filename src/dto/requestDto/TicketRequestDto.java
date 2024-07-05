@@ -1,5 +1,6 @@
 package dto.requestDto;
 
+import enums.VehicleType;
 import models.ParkingSlot;
 
 import java.time.Instant;
@@ -10,6 +11,7 @@ public class TicketRequestDto {
     private int gateId;
     private int operatorId;
     private String numberPlate;
+    private String vehicleType;
     private Date entryTime = Date.from(Instant.now());
 
     public int getGateId() {
@@ -51,4 +53,13 @@ public class TicketRequestDto {
     public void setParkingLotId(int parkingLotId) {
         this.parkingLotId = parkingLotId;
     }
+
+    public String getVehicleType() {
+        return vehicleType;
+    }
+
+    public void setVehicleType(String vehicleType) {
+        this.vehicleType = vehicleType;
+    }
+
 }
